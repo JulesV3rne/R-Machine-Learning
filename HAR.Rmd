@@ -1,0 +1,98 @@
+---
+title: "Human Activity Recognition in R"
+author: "Matthew Kotorlis"
+date: "29/08/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Preface
+
+In this study, we will be performing machine learning methods on accelerometer data in order to predict improperly performed exercises.
+
+### Preparing the environment
+
+```{r, message=FALSE}
+if(!require(dplyr)) { install.packages("dplyr") }
+if(!require(ggplot2)) { install.packages("ggplot2") }
+if(!require(caret)) { install.packages("caret") }
+if(!require(randomForest)) { install.packages("randomForest") }
+
+if (!file.exists("trdata.csv")) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+                destfile = "trdata.csv")}
+if (!file.exists("tsdata.csv")) {
+  download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+                destfile = "tsdata.csv")}
+
+training <- read.csv("trdata.csv", na.strings = c("","NA","#DIV/0!"))
+testing <- read.csv("tsdata.csv", na.strings = c("","NA","#DIV/0!"))
+
+set.seed(793)
+```
+
+### Exploratory Analysis and Cleaning
+
+```{r, results='hide'}
+colSums(is.na(training)) #output supressed
+```
+Notice we have a lot of NA data. Let's discard the columns with over 90% NA data as these. Also checking the subset of ```nearZeroVar()``` overlapping with high NA values.
+```{r}
+nzv_total <- nearZeroVar(training)
+na <- (colMeans(is.na(training)) > 0.9)
+paste("NZV not NA: ", length(which(na[nzv_total] == F)), " | NZV and NA: ",
+      length(which(na[nzv_total] == T)))
+```
+We should also throw out columns 1:7 as time or sequences data might confound our data and force the training model to predict based on that.
+
+```{r,results='hide'}
+na[1:7] <- TRUE
+training$classe <- as.factor(training$classe)
+training <- training[,!na]
+testing <- testing[,!na]
+
+str(testing) #output supressed
+```
+
+Checking our data classes, we find relatively balanced data for each category, this should not lead to any problems training our model
+```{r}
+table(training$classe)
+```
+
+Let's create a validation set in order to evaluate our models before testing on the final data
+
+```{r}
+subtrain <- createDataPartition(training$classe, p=0.75, list=F)
+validation <- training[-subtrain,]
+training <- training[subtrain,]
+```
+
+## Training our model
+
+Training our model with a Random Forest algorithm. This takes a long time, so we will cache our model to disk after training.
+```{r}
+USE_CACHE <- TRUE #Edit this line if you would rather use the model than train it
+if ((file.exists("model_rf.rda")) && (USE_CACHE)) { 
+    load("model_rf.rda")
+} else {
+    model_rf <- train(classe~.,data=training,method='rf')
+    save(model_rf, file = "model_rf.rda") 
+}
+```
+
+```{r}
+pred <- predict(model_rf, newdata=validation)
+confusionMatrix(pred, validation$classe)[c('table','overall')] #See Appendix for full
+```
+
+Now that we have cleaned our data and performed a very robust training algorithm, our model performs extremely well on the validation data it has never seen before and we have not adjusted against. Assuming testing data is in sample, it is not expected that we can improve this model further. Exploring other models or model stacking may provide diminishing returns or overfit the data and not prove so well in cross validation
+
+# Appendix
+
+```{r}
+confusionMatrix(pred, validation$classe)
+```
+
